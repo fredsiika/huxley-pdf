@@ -1,26 +1,80 @@
 import streamlit as st
+from streamlit_extras.add_vertical_space import add_vertical_space
 import tempfile
-import os 
-from langchain.document_loaders import DirectoryLoader, PyMuPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import os
+import time
+from langchain.document_loaders import DirectoryLoader, UnstructuredFileLoader, PyMuPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chat_models import ChatOpenAI
 from langchain.vectorstores import Pinecone
 import pinecone
+# from PyPDF2 import PdfReader
 from templates.qa_prompt import QA_PROMPT
 from templates.condense_prompt import CONDENSE_PROMPT
+# from dotenv import load_dotenv
+import configparser
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-from dotenv import load_dotenv
-load_dotenv()
+os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
 
-pinecone_namespace ='huxley-pdf-streamlit'
+def clear_submit():
+    st.session_state["submit"] = False
+
+st.set_page_config(page_title='HuxleyPDF | by Fred Siika', page_icon='🗂', layout='wide')
+
+def sidebar():
+    with st.sidebar:
+        st.markdown('''## About HuxleyPDF''')
+        st.markdown('''    
+            HuxleyPDF is a Python application that allows you to upload a PDF and ask questions about it using natural language.
+            
+            ## How it works:
+            
+            Upload personal docs and Chat with your PDF files with this GPT4-powered app. Built with LanChain, Pinecone Vector Db, deployed on Streamlit
+
+            ## How to use:
+            
+            1. Upload a PDF
+            2. Ask a question about the PDF
+            3. Get an answer about the PDF
+            4. Repeat
+
+            ## Before you start using HuxleyPDF:
+            - You need to have an OpenAI API key. You can get one [here](https://api.openai.com/).
+            - You need to have a Pinecone API key. You can get one [here](https://www.pinecone.io/).
+            - You need to have a Pinecone environment. You can create one [here](https://www.pinecone.io/).
+        ''')
+        st.write(
+            "openai_api_key set: ",
+            os.environ.get('OPENAI_API_KEY') == st.secrets['OPENAI_API_KEY'],
+        )
+        st.write(
+            "pinecone_api set: ",
+            os.environ.get('PINECONE_API_KEY') == st.secrets['PINECONE_API_KEY'],
+        )
+        st.write(
+            "pinecone_environment set: ",
+            os.environ.get('PINECONE_ENVIRONMENT') == st.secrets['PINECONE_ENVIRONMENT'],
+        )
+        st.write(
+            "pinecone_index set set:",
+            os.environ.get('PINECONE_INDEX') == st.secrets['PINECONE_INDEX'],
+        )
+        st.write(
+            'pinecone_namespace set: ',
+            os.environ.get('PINECONE_NAMESPACE') == st.secrets['PINECONE_NAMESPACE'],
+        )
+        add_vertical_space(5)
+        st.write('[HuxleyPDF](https://github.com/fredsiika/huxley-pdf) was made with ❤️ by [Fred](https://github.com/fredsiika)')
 
 def main():
-    # Set Streamlit app title and header
     st.title('🗂 HuxleyPDF')
     st.header('Chat With Your PDF Docs')
-
+    sidebar()
+    
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -35,43 +89,69 @@ def main():
     with col4:
         pinecone_index = st.text_input("Pinecone Index Name")
 
+    uploaded_files = st.file_uploader(
+        "Upload multiple files",
+         type="pdf",
+         help="docs, and txt files are still in beta.",
+         accept_multiple_files=True,
+         on_change=clear_submit,
+        )
 
-    uploaded_files = st.file_uploader("Upload multiple files", accept_multiple_files=True, type="pdf")
-
+    index = None
+    doc = None
     if uploaded_files:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for uploaded_file in uploaded_files:
-                file_name = uploaded_file.name
-                file_content = uploaded_file.read()
-                st.write("Filename: ", file_name)
-                with open(os.path.join(tmpdir, file_name), "wb") as file:
-                    file.write(file_content)
-            loader = DirectoryLoader(tmpdir, glob="**/*.pdf", loader_cls=PyMuPDFLoader)
-            documents = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=100)
-            documents = text_splitter.split_documents(documents)
-
-            pinecone.init(
-                api_key=pinecone_api_key,  # find at app.pinecone.io
-                environment=pinecone_environment  # next to api key in console
-            )
-            embeddings = OpenAIEmbeddings(model='text-embedding-ada-002', openai_api_key=openai_api_key)
-            Pinecone.from_documents(documents, embeddings, index_name=pinecone_index, namespace=pinecone_namespace)
-            st.success("Ingested File!")
-
-    message = st.text_input('User Input:')
+        try:
+            with st.spinner("Indexing documents... this might take a while⏳"):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    for uploaded_file in uploaded_files:
+                        file_name = uploaded_file.name
+                        file_content = uploaded_file.read()
+                        st.write("Filename: ", file_name)
+                        with open(os.path.join(tmpdir, file_name), "wb") as file:
+                            file.write(file_content)
+                    loader = DirectoryLoader(tmpdir, glob="**/*.pdf", loader_cls=PyMuPDFLoader) # type: ignore
+                    documents = loader.load()
+                    text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=100)
+                    documents = text_splitter.split_documents(documents)
+                    pinecone.init(
+                        api_key=pinecone_api_key,  # find at app.pinecone.io
+                        environment=pinecone_environment  # next to api key in console
+                    )
+                    openai_api_key = os.getenv('OPENAI_API_KEY')
+                    embeddings = OpenAIEmbeddings(model='text-embedding-ada-002', openai_api_key=openai_api_key, client=None)
+                    Pinecone.from_documents(documents, embeddings, index_name=pinecone_index, namespace='langchain1')
+                    st.success("Ingested File!")
+            st.session_state["api_key_configured"] = True
+        except Exception as e:
+            st.error(e)
+    message = st.text_input('User Input:', on_change=clear_submit)
     temperature = st.slider('Temperature', 0.0, 2.0, 0.7)
     source_amount = st.slider('Sources', 1, 8, 4)
 
+    button = st.button('Submit')
+    if button or st.session_state.get('submit'):
+        if not st.session_state.get("api_key_configured"):
+                st.error("Please configure your OpenAI API key!")
+        elif not index:
+            st.error("Please upload a PDF!")
+        elif not message:
+            st.error("Please enter a message!")
+        else:
+            st.session_state["submit"] = True
+            # Output columns
+            answer_col, context_column, source_column = st.columns(3)
 
     if message:
         chat_history = []
-        embeddings = OpenAIEmbeddings(model='text-embedding-ada-002', openai_api_key=openai_api_key)
-
+        model_name = 'text-embedding-ada-002'
+        embeddings = OpenAIEmbeddings(
+            model=model_name, 
+            openai_api_key=os.getenv('OPENAI_API_KEY'),
+            client=None
+        )
         pinecone.init(api_key=pinecone_api_key,environment=pinecone_environment)
-        vectorstore = Pinecone.from_existing_index(index_name=pinecone_index, embedding=embeddings, text_key='text', namespace=pinecone_namespace)
-
-        model = ChatOpenAI(model_name='gpt-3.5-turbo', temperature=temperature, openai_api_key=openai_api_key, streaming=True) # max temperature is 2 least is 0
+        vectorstore = Pinecone.from_existing_index(index_name=pinecone_index, embedding=embeddings, text_key='text', namespace='langchain1')
+        model = ChatOpenAI(model_name='gpt-3.5-turbo', temperature=temperature, openai_api_key=os.getenv('OPENAI_API_KEY'), streaming=True, client=None) # max temperature is 2 least is 0
         retriever = vectorstore.as_retriever(search_kwargs={"k": source_amount},  qa_template=QA_PROMPT, question_generator_template=CONDENSE_PROMPT) # 9 is the max sources
         qa = ConversationalRetrievalChain.from_llm(llm=model, retriever=retriever, return_source_documents=True)
         result = qa({"question": message, "chat_history": chat_history})
@@ -112,5 +192,5 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except:
-        st.write('Fatal Error!')
+    except Exception as e:
+        st.error(f"Error while rendering the response: {str(e)}")
