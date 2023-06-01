@@ -48,7 +48,6 @@ scikit-learn
 h11
 requests
 typing_extensions
-pinecone-client[grpc]
 jsonschema
 python-dotenv
 typing-inspect
@@ -69,14 +68,10 @@ mdurl
 scipy
 tzlocal
 gitdb
-faiss-cpu
-# huggingface-hub
 hnswlib
 urllib3
 altair
 frozenlist
-# llama-index
-# gpt-index
 threadpoolctl
 yarl
 multidict
@@ -100,7 +95,6 @@ pydantic
 sentencepiece
 charset-normalizer
 cachetools
-chromadb
 click
 MarkupSafe
 PyJWT
@@ -114,7 +108,6 @@ sniffio
 watchfiles
 openai
 django-cors-headers
-pinecone-datasets
 SQLAlchemy
 duckdb
 networkx
