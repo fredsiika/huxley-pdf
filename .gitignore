@@ -160,3 +160,5 @@ config.ini
 secrets.toml
 
 vectors/*
+
+huxleypdfenv/*
