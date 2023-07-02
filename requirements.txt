@@ -125,3 +125,4 @@ langchain
 loguru
 transformers
 marshmallow-enum
+faiss-cpu

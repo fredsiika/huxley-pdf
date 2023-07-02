@@ -1,34 +1,31 @@
 import os
 import time
+import logging
 import tempfile
 import tiktoken
-import traceback
-import configparser
 import pinecone
 import streamlit as st
-st.set_page_config(page_title='HuxleyPDF | by Fred Siika', page_icon='🗂', layout='wide')
-from streamlit_extras.add_vertical_space import add_vertical_space
+from dotenv import load_dotenv
 
-from langchain.chat_models import ChatOpenAI
+from PyPDF2 import PdfReader
+from langchain.llms import OpenAI
+from langchain.vectorstores import FAISS
 from langchain.vectorstores import Pinecone
+from langchain.chat_models import ChatOpenAI
+from langchain.callbacks import get_openai_callback
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.chains import ConversationalRetrievalChain
+from langchain.chains.question_answering import load_qa_chain
 from streamlit_extras.add_vertical_space import add_vertical_space
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
-from langchain.document_loaders import DirectoryLoader, UnstructuredFileLoader, UnstructuredURLLoader, PyMuPDFLoader
+from langchain.document_loaders import DirectoryLoader, PyMuPDFLoader
 
 from templates.qa_prompt import QA_PROMPT
 from templates.condense_prompt import CONDENSE_PROMPT
 
-import logging
+load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
-
-
-# Configure environment variables
-config = configparser.ConfigParser()
-config.read('config.ini')
-# openai_api_key=st.secrets['OPENAI_API_KEY']
-# os.environ['OPENAI_API_KEY'] = st.secrets['PROD'].OPENAI_API_KEY
+config = st.set_page_config(page_title='HuxleyPDF | by Fred Siika', page_icon='🗂', layout='wide')
+index = 'huxleygpt'
 openai_api_key=os.getenv('OPENAI_API_KEY'),
 
 def render_header():
@@ -51,11 +48,9 @@ def render_header():
                         "View Source Code on [Github](<https://github.com/fredsiika/huxley-pdf/blob/main/huxley.py>)"
                     ))
     with col2:
-        st.image(image='huxleychat_banner.png', width=300, caption='Mid Journey: A researcher who is really good at their job and utilizes twitter to do research about the person they are interviewing. playful, pastels. --ar 4:7')
+        st.image(image='huxleychat_banner.png', width=300, caption='Tutorial and accompanying documentation coming soon.')
     # End Top Information
     return
-    
-index = 'huxleygpt'
 
 # Function to set up the environment
 def setup_environment():
@@ -70,22 +65,51 @@ def connect_to_pinecone(index_name):
     # find ENV (cloud region) next to API key in console
     PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT') # or 'PINECONE_ENVIRONMENT'
 
+    openai_model= 'gpt-3.5-turbo'
+    temperature = 0.5
+    
     # initialize pinecone
-    # pinecone.init(
-    #     api_key=PINECONE_API_KEY,  # find at app.pinecone.io
-    #     environment=PINECONE_ENVIRONMENT  # next to api key in console
-    # )
+    pinecone.init(
+        api_key=PINECONE_API_KEY,  # find at app.pinecone.io
+        environment=PINECONE_ENVIRONMENT  # next to api key in console
+    )
+    
+    model = ChatOpenAI(
+        model_name=openai_model,
+        temperature=temperature,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        streaming=False
+    )  # max temperature is 2 least is 0
+    
+    # only create index if it doesn't exist
+    if index_name not in pinecone.list_indexes():
+        pinecone.create_index(
+            name=index_name,
+            dimension=model.get_sentence_embedding_dimension(),
+            metric='cosine'
+        )
 
-    index = pinecone.GRPCIndex(index_name)
+    # now connect to the index
     print(f"Connecting to Pinecone..\nindex_name: {index_name}")
+    index = pinecone.GRPCIndex(index_name)
     
     # wait a moment for the index to be fully initialized
     time.sleep(1)
-
+    
+    loader = PyMuPDFLoader("./docs/white_paper.pdf")
+    documents = loader.load()
+    text_splitter = CharacterTextSplitter(chunk_size=400, chunk_overlap=20)
+    docs = text_splitter.split_documents(documents)
+    embeddings = OpenAIEmbeddings()
+    
+    # if you already have an index, you can load it like this
+    docsearch = Pinecone.from_documents(docs, embeddings, index_name=index_name)
+    query = "Why did the chicken cross the road?"
+    docs = docsearch.similarity_search(query)
+    print(f'\n{docs[0].page_content}\n')
+    
     # print(f"\nClients connected to Pinecone index {index_name} \n{index.describe_index_stats()}\n")
     return index.describe_index_stats()
-
-
 
 def clear_submit():
     st.session_state["submit"] = False
@@ -224,177 +248,46 @@ def ingest_files(uploaded_files):
 def main():
     render_header()
     sidebar()
-    setup_environment()
+    # setup_environment()
     
-    try:
-        st.markdown("### Chat with your PDF Docs")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            openai_api_key == st.text_input("OpenAI API Key", type="password")
+    # Upload file
+    pdf = st.file_uploader("Upload your PDF", type="pdf")
+    
+    # extract the text
+    if pdf is not None:
+        pdf_reader = PdfReader(pdf)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text()
         
-        with col2:
-            pinecone_api_key = st.text_input("Pinecone API Key", type="password")
-
-        with col3:
-            pinecone_environment = st.text_input("Pinecone Environment")
-
-        with col4:
-            pinecone_index = st.text_input("Pinecone Index Name")
-        
-        uploaded_files = upload_files()
-       
-        # Create a Pinecone index and ingest the documents
-        Pinecone.from_documents(
-            doc_chunks,
-            embeddings, 
-            index_name=pinecone_index, 
-            namespace='huxley-pdf-embeddings-2023-06-29'
+        # Split into chunks
+        text_splitter = CharacterTextSplitter(
+            separator="\n",
+            chunk_size=400,
+            chunk_overlap=80, # I usually set chunk_overlap == 20% of chunk_size
+            length_function=len
         )
-        index = 'huxleygpt'
-         
-        doc = None
-        message = st.text_input('User Input:', on_change=clear_submit)
-        temperature = st.slider('Temperature', 0.0, 2.0, 0.7)
-        source_amount = st.slider('Sources', 1, 8, 4)
+        chunks = text_splitter.split_text(text)
         
-        if uploaded_files:
-            try:
-                with st.spinner("Indexing documents... this might take a while⏳"):
-                    
-                    # Create a temporary directory to store the uploaded files
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        print("Created temporary directory...")
-                        
-                        # Loop through each file that was uploaded
-                        for uploaded_file in uploaded_files:
-                            print('Looping through uploaded files...')
-                            
-                            # Get the file name and content
-                            print("Getting file name and content...")
-                            file_name = uploaded_file.name
-                            file_content = uploaded_file.read()
-                            
-                            # Write the file to the temporary directory
-                            with open(os.path.join(tmpdir, file_name), "wb") as file:
-                                print("Writing file to temporary directory...\n")
-                                file.write(file_content)
-                        
-                        # Load the documents from the temporary directory
-                        loader = DirectoryLoader(tmpdir, glob="**/*.pdf", loader_cls=PyMuPDFLoader, show_progress=True, silent_errors=True) # type: ignore
-                        documents = loader.load()
-                        pages = loader.load_and_split()
-                        page_no = [page.metadata['page'] for page in pages]
-                        page_sources = [page.metadata['source'] for page in pages]
-                        print(f"\n\n{len(pages)}\n\n")
-                        print(f"\n\n{pages[0]}\n\n")
-                        print(f"\n\n{pages[:4]}\n\n")
-                        print('Splitting documents...')
-                        text_splitter = RecursiveCharacterTextSplitter(
-                            chunk_size=400,
-                            chunk_overlap=20, 
-                            separators=["\n\n", "\n", " ", ""]
-                        )
-                            # length_function=len, 
-                        # documents = text_splitter.split_documents(documents)
-                        docs_chunks = text_splitter.split_documents(documents)
-                        pdf_chunks = text_splitter.split_text(docs_chunks[0])
-                        # print(f"\n\n{tiktoken_len(pdf_chunks)} tokens loaded\n\n")
-                        # Initializing Pinecone
-                        print('Initializing Pinecone index...')
-                        # openai_api_key = os.getenv('OPENAI_API_KEY')
-                        # pinecone.init(
-                        #     api_key=pinecone_api_key,  # find at app.pinecone.io
-                        #     environment=pinecone_environment  # next to api key in console
-                        # )
-                        # Create an OpenAI embeddings object
-                        print('Creating OpenAI embeddings object...')
-                        uploaded_embeddings = OpenAIEmbeddings(
-                            model='text-embedding-ada-002', 
-                            openai_api_key=openai_api_key, 
-                            client=None
-                        )
-                        docsearch = Pinecone.from_existing_index(index_name=index, embedding=uploaded_embeddings, namespace='huxley-pdf-embeddings-2023-05-JUNE')
-                        query = "What did the president say about Ketanji Brown Jackson"
-                        docs = docsearch.similarity_search(query)
-                        st.success(f"\nIngested File Successfully!\n{len(pdf_chunks)} documents ingested!")
-                    st.session_state["api_key_configured"] = True
-            except Exception as e:
-                st.error(f"Error while ingesting the files: {str(e)}")
-            return None
-        ingest_files(uploaded_files)
-                   
-        message = st.text_input('User Input:', on_change=clear_submit)
-        temperature = st.slider('Temperature', 0.0, 2.0, 0.7)
-        source_amount = st.slider('Sources', 1, 8, 4)
-        # message, temperature, source_amount = get_user_input()
-
-        # handle_conversation(message, temperature, source_amount)
+        # create embeddings
+        embeddings = OpenAIEmbeddings()
         
-        button = st.button('Submit')
-        # if button or st.session_state.get('submit'):
-        #     if not st.session_state.get("api_key_configured"):
-        #             st.error("Please configure your OpenAI API key!")
-        #     elif not index:
-        #         st.error("Please upload a PDF!")
-        #     elif not message:
-        #         st.error("Please enter a message!")
-        #     else:
-        #         st.session_state["submit"] = True
-        #         # Output columns
-        #         answer_col, context_column, source_column = st.columns(3)
-
+        # uncomment the line below if you're using FAISS instead of Pinecone
+        knowledge_base = FAISS.from_texts(chunks, embeddings) # uncomment this if you're using FAISS
         
-        if message:
-            chat_history = []
-            model_name = 'text-embedding-ada-002'
-            embeddings = OpenAIEmbeddings(
-                model=model_name, 
-                openai_api_key=os.getenv('OPENAI_API_KEY'),
-                client=None
-            )
+        # show user input
+        user_question = st.text_input("Ask a question about your PDF: ")
+        if user_question:
+            docs = knowledge_base.similarity_search(user_question)
+            llm = OpenAI()
+            chain = load_qa_chain(llm, chain_type="stuff")
+            with get_openai_callback() as cb:
+                response = chain.run(input_documents=docs, question=user_question)
+                print(cb)
+                
+            st.write(response)
             
-            pinecone.init(api_key=pinecone_api_key,environment=pinecone_environment)
-            vectorstore = Pinecone.from_existing_index(index_name=pinecone_index, embedding=embeddings, text_key='text', namespace='huxley-pdf-embeddings-2023-06-29')
-            model = ChatOpenAI(model_name='gpt-3.5-turbo', temperature=temperature, openai_api_key=os.getenv('OPENAI_API_KEY'), streaming=True, client=None) # max temperature is 2 least is 0
-            retriever = vectorstore.as_retriever(search_kwargs={"k": source_amount},  qa_template=QA_PROMPT, question_generator_template=CONDENSE_PROMPT) # 9 is the max sources
-            qa = ConversationalRetrievalChain.from_llm(llm=model, retriever=retriever, return_source_documents=True)
-            result = qa({"question": message, "chat_history": chat_history})
-            answer = result["answer"]
-            source_documents = result['source_documents']
-
-            parsed_documents = []
-            for doc in source_documents:
-                parsed_doc = {
-                    "page_content": doc.page_content,
-                    "metadata": {
-                        "author": doc.metadata.get("author", ""),
-                        "creationDate": doc.metadata.get("creationDate", ""),
-                        "creator": doc.metadata.get("creator", ""),
-                        "file_path": doc.metadata.get("file_path", ""),
-                        "format": doc.metadata.get("format", ""),
-                        "keywords": doc.metadata.get("keywords", ""),
-                        "modDate": doc.metadata.get("modDate", ""),
-                        "page_number": doc.metadata.get("page_number", 0),
-                        "producer": doc.metadata.get("producer", ""),
-                        "source": doc.metadata.get("source", ""),
-                        "subject": doc.metadata.get("subject", ""),
-                        "title": doc.metadata.get("title", ""),
-                        "total_pages": doc.metadata.get("total_pages", 0),
-                        "trapped": doc.metadata.get("trapped", "")
-                    }
-                }
-                parsed_documents.append(parsed_doc)
-                print(parsed_doc["metadata"]["source"])
-
-            # Display the response in the Streamlit app
-            st.write('AI:')
-            st.write(answer)
-            for doc in parsed_documents:
-                st.write(f"Source:", doc["metadata"]["source"])
-                st.write(f"Page Number:", doc["metadata"]["page_number"])
-    except Exception as e:
-        # tb = traceback.format_exc()
-        st.error(f"Error while rendering the response: make sure you've entered your correct api/config keys.")
-
+            #TODO: Add error handling
+            
 if __name__ == '__main__':
     main()
