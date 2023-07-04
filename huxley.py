@@ -1,14 +1,19 @@
 import os
 import time
+import base64
 import logging
 import tempfile
+import requests
 import tiktoken
 import pinecone
+from io import BytesIO
 import streamlit as st
-from dotenv import load_dotenv
 
 from PyPDF2 import PdfReader
+from dotenv import load_dotenv
 from langchain.llms import OpenAI
+from pdf2image import convert_from_bytes
+
 from langchain.vectorstores import FAISS
 from langchain.vectorstores import Pinecone
 from langchain.chat_models import ChatOpenAI
@@ -244,6 +249,22 @@ def ingest_files(uploaded_files):
     except Exception as e:
         st.error(f"Error while ingesting the files: {str(e)}")
         return None
+
+# Function to display PDF as image on mobile devices
+def show_pdf_as_image(pdf_bytes):
+    images = convert_from_bytes(pdf_bytes)
+    for image in images:
+        st.image(image)
+    
+# Function to display PDF as iFrame on desktop
+def show_pdf_as_iframe(file):
+    if file is not None:
+        pdf_bytes = file.read()
+        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="500" height="500" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        pdf_reader = PdfReader(file)
 
 def main():
     render_header()
