@@ -163,3 +163,5 @@ vectors/*
 
 huxleypdfenv/*
 myenv/*
+venv*
+.DS_Store

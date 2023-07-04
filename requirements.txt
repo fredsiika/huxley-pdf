@@ -126,3 +126,4 @@ loguru
 transformers
 marshmallow-enum
 faiss-cpu
+pdf2image
