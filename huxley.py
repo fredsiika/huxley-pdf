@@ -17,7 +17,7 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chains.question_answering import load_qa_chain
 from streamlit_extras.add_vertical_space import add_vertical_space
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
-from langchain.document_loaders import DirectoryLoader, PyMuPDFLoader
+from langchain.document_loaders import DirectoryLoader, PyMuPDFLoader, OnlinePDFLoader
 
 from templates.qa_prompt import QA_PROMPT
 from templates.condense_prompt import CONDENSE_PROMPT
@@ -252,6 +252,11 @@ def main():
     
     # Upload file
     pdf = st.file_uploader("Upload your PDF", type="pdf")
+    
+    # Fetching remote PDFs using Unstructured
+    loader = OnlinePDFLoader("https://arxiv.org/pdf/2302.03803.pdf")
+    data = loader.load()
+    print(data)
     
     # extract the text
     if pdf is not None:
