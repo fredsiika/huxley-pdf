@@ -275,9 +275,9 @@ def main():
     pdf = st.file_uploader("Upload your PDF", type="pdf")
     
     # Fetching remote PDFs using Unstructured
-    loader = OnlinePDFLoader("https://arxiv.org/pdf/2302.03803.pdf")
-    data = loader.load()
-    print(data)
+    # loader = OnlinePDFLoader("https://arxiv.org/pdf/2302.03803.pdf")
+    # data = loader.load()
+    # print(data)
     
     # extract the text
     if pdf is not None:
