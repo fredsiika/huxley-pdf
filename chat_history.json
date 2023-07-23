@@ -1,1 +1,10 @@
-[]
+[
+    [
+        "what is this document about?",
+        "This document appears to be a collection of references and information related to various topics, including digital currencies like Bitcoin, cryptographic hashing, blockchain technology, and other related concepts. It also includes information about the United States Sentencing Commission and its role in developing national sentencing guidelines."
+    ],
+    [
+        "what's the incentive to keep the node honest?",
+        "The incentive for nodes to remain honest is the ability to earn new coins. By convention, the first transaction in a block is a special transaction that starts a new coin owned by the creator of the block. This adds an incentive for nodes to support the network and validate transactions. Additionally, the incentive can also be funded with transaction fees. If the output value of a transaction is less than its input value, the difference is a transaction fee that is added to the incentive value of the block containing the transaction. Therefore, nodes have a financial motivation to play by the rules and validate transactions honestly."
+    ]
+]

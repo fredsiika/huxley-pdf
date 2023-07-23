@@ -13,7 +13,7 @@ openai_api_key = os.environ.get('OPENAI_API_KEY')
 pinecone_api_key = os.environ.get('PINECONE_API_KEY')
 pinecone_environment = os.environ.get('PINECONE_ENVIRONMENT')
 pinecone_index = os.environ.get('PINECONE_INDEX')
-pinecone_namespace = 'testing-pdf-0001'
+pinecone_namespace = 'test'
 temperature = 0.1
 source_amount = 3
 

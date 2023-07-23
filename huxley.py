@@ -180,7 +180,8 @@ def sidebar():
         )
         st.write(
             "pinecone_environment set: ",
-            os.environ.get('PINECONE_ENVIRONMENT') == st.secrets['PINECONE_ENVIRONMENT'],
+            os.environ.get('PINECONE_ENVIRONMENT') == "us-west4-gcp-free",
+            #st.secrets['PINECONE_ENVIRONMENT'],
         )
         st.write(
             "pinecone_index set set:",
@@ -188,7 +189,8 @@ def sidebar():
         )
         st.write(
             'pinecone_namespace set: ',
-            os.environ.get('PINECONE_NAMESPACE') == st.secrets['PINECONE_NAMESPACE'],
+            os.environ.get('PINECONE_NAMESPACE') == 'test',
+            #st.secrets['PINECONE_NAMESPACE'],
         )
 
 def upload_files():
