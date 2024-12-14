@@ -165,3 +165,7 @@ huxleypdfenv/*
 myenv/*
 venv*
 .DS_Store
+
+# env fils
+.env
+.env.*

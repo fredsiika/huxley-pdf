@@ -11,7 +11,7 @@ import streamlit as st
 
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
-from langchain.llms import OpenAI
+from langchain.llms import OpenAI # type: ignore
 from pdf2image import convert_from_bytes
 
 from langchain.vectorstores import FAISS
@@ -22,7 +22,12 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chains.question_answering import load_qa_chain
 from streamlit_extras.add_vertical_space import add_vertical_space
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
-from langchain.document_loaders import DirectoryLoader, PyMuPDFLoader, OnlinePDFLoader
+from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader, PyMuPDFLoader, OnlinePDFLoader
+    
+loader = PyPDFLoader('docs/white_paper.pdf')
+pages = []
+
+print(loader)
 
 from templates.qa_prompt import QA_PROMPT
 from templates.condense_prompt import CONDENSE_PROMPT
@@ -30,8 +35,52 @@ from templates.condense_prompt import CONDENSE_PROMPT
 load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
 config = st.set_page_config(page_title='HuxleyPDF | by Fred Siika', page_icon='🗂', layout='wide')
-index = 'huxleygpt'
-openai_api_key=os.getenv('OPENAI_API_KEY'),
+
+# index = 'huxleypdf'
+# openai_api_key=os.environ['OPENAI_API_KEY']
+
+def check_openai_api_key():
+    st.info("Please add your OpenAI API key to begin.")
+    openai_api_key = st.text_input("OpenAI API Key", type="password")
+    if not openai_api_key:
+        st.stop()
+        return False
+    else:
+        os.environ['OPENAI_API_KEY'] = openai_api_key
+        st.success("API key set: " + openai_api_key[:5] + "..." + openai_api_key[-5:])
+        return True
+
+def check_pinecone_api_key():
+    st.info("Please add your Pinecone API key to continue.")
+    pinecone_api_key = st.text_input("Pinecone API Key", type="password")
+    if not pinecone_api_key:
+        st.stop()
+        return False
+    else:
+        os.environ['PINECONE_API_KEY'] = pinecone_api_key
+        st.success("API key set: " + pinecone_api_key[:5] + "..." + pinecone_api_key[-5:])
+        return True
+def check_pinecone_index():
+    st.info("Please add your Pinecone index to continue to begin. If you don't have one use the demo `huxleypdf`")
+    pinecone_index = st.text_input("Pinecone Index")
+    if not pinecone_index:
+        st.stop()
+        return False
+    else:
+        os.environ['PINECONE_INDEX'] = pinecone_index
+        st.success("Index set: " + pinecone_index)
+        return True
+
+def check_pinecone_namespace():
+    st.info("Please add your Pinecone namespace to continue. If you don't have one use the demo `ns1`")
+    pinecone_namespace = st.text_input("Pinecone Namespace")
+    if not pinecone_namespace:
+        st.stop()
+        return False
+    else:
+        os.environ['PINECONE_NAMESPACE'] = pinecone_namespace
+        st.success("Namespace set: " + pinecone_namespace)
+        return True  
 
 def render_header():
    # Start Top Information
@@ -60,7 +109,7 @@ def render_header():
 # Function to set up the environment
 def setup_environment():
     print('Setting up environment')
-    connect_to_pinecone(index)
+    # connect_to_pinecone(index)
 
 def connect_to_pinecone(index_name):
     """Connect to Pinecone and return the index."""
@@ -154,7 +203,7 @@ def sidebar():
             
             3. Create a new secret key and copy & paste it into the "API key" input field below.👇🏾
         ''')
-        openai_api_key = st.text_input("OpenAI API Key", type="password")
+        
         st.markdown('''
             ## OpenAI API key
             
@@ -169,27 +218,32 @@ def sidebar():
         ''')
         add_vertical_space(5)
         st.write('[HuxleyPDF](https://github.com/fredsiika/huxley-pdf) was made with ❤️ by [Fred](https://github.com/fredsiika)')
-
+        
         st.write(
             "openai_api_key set: ",
-            "<span style='color:green;'>True</span>" if os.environ.get('OPENAI_API_KEY') != '' else "<span style='color:red;'>False</span>"
+            check_openai_api_key()
+            # f'<span style="color:green;">{True}</span>' if os.environ.get('OPENAI_API_KEY') else f'<span style="color:red;">{False}</span>'
         )
         st.write(
             "pinecone_api set: ",
-            os.environ.get('PINECONE_API_KEY') == '',
-        )
-        st.write(
-            "pinecone_environment set: ",
-            os.environ.get('PINECONE_ENVIRONMENT') == st.secrets['PINECONE_ENVIRONMENT'],
+            check_pinecone_api_key()
+            # True if os.environ.get('PINECONE_API_KEY') == st.secrets['PINECONE_API_KEY'] else False   
         )
         st.write(
             "pinecone_index set set:",
-            os.environ.get('PINECONE_INDEX') == st.secrets['PINECONE_INDEX'],
+            check_pinecone_index()
+            # os.environ.get('PINECONE_INDEX') == st.secrets['PINECONE_INDEX'],
         )
         st.write(
             'pinecone_namespace set: ',
-            os.environ.get('PINECONE_NAMESPACE') == st.secrets['PINECONE_NAMESPACE'],
+            check_pinecone_namespace()
+            # os.environ.get('PINECONE_NAMESPACE') == st.secrets['PINECONE_NAMESPACE'],
         )
+        # st.write(
+        #     "pinecone_environment set: ",
+            
+        #     # os.environ.get('PINECONE_ENVIRONMENT') == st.secrets['PINECONE_ENVIRONMENT'],
+        # )
 
 def upload_files():
     uploaded_files = st.file_uploader(
@@ -242,8 +296,8 @@ def ingest_files(uploaded_files):
                 )
                 openai_api_key = os.getenv('OPENAI_API_KEY')
                 embeddings = OpenAIEmbeddings(model='text-embedding-ada-002', openai_api_key=openai_api_key, client=None)
-                # Pinecone.from_documents(documents, embeddings, index_name=index_name, namespace='langchain1')
-                Pinecone.from_existing_index(index_name='langchain1', embedding=embeddings, namespace='huxley-pdf-embeddings-2023-05-JUNE')
+                # Pinecone.from_documents(documents, embeddings, index_name=index_name, namespace='ns1')
+                Pinecone.from_existing_index(index_name='huxleypdf', embedding=embeddings, namespace='ns1')
                 st.success("Ingested File!")
             st.session_state["api_key_configured"] = True
     except Exception as e:
@@ -270,6 +324,7 @@ def main():
     render_header()
     sidebar()
     # setup_environment()
+    
     
     # Upload file
     pdf = st.file_uploader("Upload your PDF", type="pdf")
@@ -298,9 +353,11 @@ def main():
         # create embeddings
         embeddings = OpenAIEmbeddings()
         
-        # uncomment the line below if you're using FAISS instead of Pinecone
-        knowledge_base = FAISS.from_texts(chunks, embeddings) # uncomment this if you're using FAISS
-        
+        #TODO:  render image of pdf
+        # show_pdf_as_iframe(pdf)
+
+        knowledge_base = Pinecone.from_existing_index(index_name='huxleypdf', embedding=embeddings, namespace='ns1')
+
         # show user input
         user_question = st.text_input("Ask a question about your PDF: ")
         if user_question:
