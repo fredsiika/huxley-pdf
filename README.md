@@ -10,6 +10,12 @@ Chat with your personal PDF docs.
 
 [Click here to skip to the installation instructions](#installation)
 
+![HuxleyPDF](huxleychat-home.png)
+
+![HuxleyPDF](huxleychat-how-it-works.png)
+
+![HuxleyPDF](huxleychat-sidebar-apikey.png)
+
 ### `Huxley.py`
 
 The `main()` function is responsible for handling the user interface and processing the uploaded PDF file. Here's a breakdown of the code:
@@ -47,10 +53,6 @@ The `main()` function is responsible for handling the user interface and process
 16. The response is displayed using the `st.write()` function.
 
 Overall, the code within the `main()` function handles the user interface, processes the uploaded PDF file, and performs a question-answering task using the OpenAI API and the LangChain library.
-
-> References (1)
->
-> [1. `huxley.py - 268-313`](https://github.com/fredsiika/huxley-pdf/blob/127dbfd9b80b1e362f137da29ea8bed94ef16e3f/huxley.py#L269)
 
 ## Installation
 
